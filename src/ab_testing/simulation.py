@@ -1,3 +1,5 @@
+from numbers import Integral
+
 import numpy as np
 import pandas as pd
 from statsmodels.stats.proportion import proportions_ztest
@@ -35,7 +37,10 @@ def simulate_false_positive_rates(
     alpha: float = 0.05,
     seed: int = 2026,
 ) -> tuple[float, pd.DataFrame]:
-    '''Возвращает долю ложных срабатываний в контрольном прогоне и таблицу peeking.'''
+    '''Сравнивает финальную проверку и peeking на одних накопленных данных.'''
+    sizes = (n_experiments, players_per_group, n_looks)
+    if any(isinstance(value, bool) or not isinstance(value, Integral) for value in sizes):
+        raise ValueError('Число экспериментов, игроков и проверок должно быть целым')
     if n_experiments < 1 or players_per_group < 1 or n_looks < 1:
         raise ValueError('Число экспериментов, игроков и проверок должно быть положительным')
     if players_per_group % n_looks:
@@ -44,12 +49,6 @@ def simulate_false_positive_rates(
         raise ValueError('baseline_d7 и alpha должны быть строго между нулём и единицей')
 
     rng = np.random.default_rng(seed)
-    control_returns = rng.binomial(players_per_group, baseline_d7, size=n_experiments)
-    treatment_returns = rng.binomial(players_per_group, baseline_d7, size=n_experiments)
-    fixed_horizon_rate = _significant_experiments(
-        treatment_returns, control_returns, players_per_group, alpha
-    ).mean()
-
     # Каждая порция добавляет новых игроков к тем же экспериментам.
     players_per_batch = players_per_group // n_looks
     control_returns = np.zeros(n_experiments, dtype=int)
@@ -72,12 +71,14 @@ def simulate_false_positive_rates(
             'significant_by_look': ever_significant.mean(),
         })
 
-    return float(fixed_horizon_rate), pd.DataFrame(results)
+    results_by_look = pd.DataFrame(results)
+    fixed_horizon_rate = float(results_by_look.iloc[-1]['significant_at_look'])
+    return fixed_horizon_rate, results_by_look
 
 
 if __name__ == '__main__':
     fixed_rate, peeking_results = simulate_false_positive_rates()
-    print(f'Отдельный прогон с одной проверкой в конце: {fixed_rate:.2%}')
+    print(f'Одна финальная проверка на накопленных данных: {fixed_rate:.2%}')
     print(peeking_results.to_string(
         index=False,
         formatters={
